@@ -10,43 +10,62 @@ from scipy.spatial.distance import cdist
 
 
 class ONNXRecognator:
-    def __init__(self, onnx_path=PARENT_DIR / 'src/IResNet/model/R100_Glint360K.onnx'):
-        print(f'Inference "{onnx_path}" with {ort.get_device()}')
+    def __init__(self, onnx_path=PARENT_DIR / 'src/IResNet100/model/R100_Glint360K.onnx'):
+        # print(f'Inference "{onnx_path}" with {ort.get_device()}')
         self.path = onnx_path
-        self.net = ort.InferenceSession(self.path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        self.net = ort.InferenceSession(str(self.path), providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
         self.size = tuple(self.net.get_inputs()[0].shape[-2:])
         self.img_save_dir = PARENT_DIR / 'temp/'
-        self.durations = []
 
     def embedding(self, blob):
         return self.net.run(None, {self.net.get_inputs()[0].name: blob})[0]
 
-    def cos_dist(self, unknown, knowns, img_path=None, mode='mean', metric='euclidean', treshhold=17, show=False):
+    def cos_dist(self, unknown, knowns, img_path=None, mode='mean', show=False,
+                 metric='sqeuclidean', treshhold=450):
         # metric = 'cosine', treshhold = 0.9
         # metric = 'euclidean', treshhold = 17
+        # metric = 'sqeuclidean', treshhold = 400
 
-        distances1, distances2, distances3, distances4 = [], [], [], []
-        for person in knowns:
-            start = time.perf_counter_ns()
-            distances1.append(cdist(unknown.embeding0, person.embeding0, metric=metric)[0][0])
-            self.durations.append((time.perf_counter_ns() - start) / (10 ** 6))
+        distances1 = [cdist(unknown.embeding0, person.embeding0, metric=metric)[0][0] for person in knowns]
+        distances2 = [cdist(unknown.embeding0, person.embeding1, metric=metric)[0][0] for person in knowns]
+        distances3 = [cdist(unknown.embeding1, person.embeding0, metric=metric)[0][0] for person in knowns]
+        distances4 = [cdist(unknown.embeding1, person.embeding1, metric=metric)[0][0] for person in knowns]
 
-            start = time.perf_counter_ns()
-            distances2.append(cdist(unknown.embeding0, person.embeding1, metric=metric)[0][0])
-            self.durations.append((time.perf_counter_ns() - start) / (10 ** 6))
+        distances = []
+        for idx, (dist1, dist2, dist3, dist4) in enumerate(zip(distances1, distances2, distances3, distances4)):
+            if mode == 'sum':
+                distances.append(dist1 + dist2 + dist3 + dist4)
+            elif mode == 'mean':
+                distances.append((dist1 + dist2 + dist3 + dist4) / 4)
+        who_near = np.argmin(distances)
+        if distances[who_near] <= treshhold:
+            unknown.label = knowns[who_near].label
+            unknown.color = knowns[who_near].color
 
-            start = time.perf_counter_ns()
-            distances3.append(cdist(unknown.embeding1, person.embeding0, metric=metric)[0][0])
-            self.durations.append((time.perf_counter_ns() - start) / (10 ** 6))
+        if show:
+            fig, ax = plt.subplots(nrows=1, ncols=len(knowns) + 1)
+            fig.suptitle(f'metric={metric}\nthreshhhold={treshhold}\n')
+            for idx, person in enumerate(knowns):
+                ax[idx].imshow(person.img[:, :, ::-1])
+                ax[idx].set_title(f'{person.label}\n{round(distances[idx], 7)}')
+            else:
+                ax[len(knowns)].imshow(unknown.img[:, :, ::-1])
+                ax[len(knowns)].set_title(f'"{unknown.label}"\n{who_near + 1} person\n{round(distances[who_near], 7)}')
 
-            start = time.perf_counter_ns()
-            distances4.append(cdist(unknown.embeding1, person.embeding1, metric=metric)[0][0])
-            self.durations.append((time.perf_counter_ns() - start) / (10 ** 6))
+            fig.show()
+            fig.savefig(f'{self.img_save_dir / img_path.stem}_{idx}_{unknown.label}.jpg')
+        return distances[who_near]
 
-        # distances1 = [cdist(unknown.embeding0, person.embeding0, metric=metric)[0][0] for person in knowns]
-        # distances2 = [cdist(unknown.embeding0, person.embeding1, metric=metric)[0][0] for person in knowns]
-        # distances3 = [cdist(unknown.embeding1, person.embeding0, metric=metric)[0][0] for person in knowns]
-        # distances4 = [cdist(unknown.embeding1, person.embeding1, metric=metric)[0][0] for person in knowns]
+    def cos_dist_old(self, unknown, knowns, img_path=None, mode='mean', show=False,
+                     metric='sqeuclidean', treshhold=500):
+        # metric = 'cosine', treshhold = 0.9
+        # metric = 'euclidean', treshhold = 17
+        # metric = 'sqeuclidean', treshhold = 500
+
+        distances1 = [cdist(unknown.embeding0, person.embeding0, metric=metric)[0][0] for person in knowns]
+        distances2 = [cdist(unknown.embeding0, person.embeding1, metric=metric)[0][0] for person in knowns]
+        distances3 = [cdist(unknown.embeding1, person.embeding0, metric=metric)[0][0] for person in knowns]
+        distances4 = [cdist(unknown.embeding1, person.embeding1, metric=metric)[0][0] for person in knowns]
 
         distances = []
         for idx, (dist1, dist2, dist3, dist4) in enumerate(zip(distances1, distances2, distances3, distances4)):
@@ -58,32 +77,29 @@ class ONNXRecognator:
         label = knowns[who_near].label if distances[who_near] <= treshhold else 'unknown'
 
         if show:
-            fig, ax = plt.subplots(nrows=2, ncols=len(knowns) + 1)
+            fig, ax = plt.subplots(nrows=1, ncols=len(knowns) + 1)
             fig.suptitle(f'metric={metric}\nthreshhhold={treshhold}\n')
             for idx, person in enumerate(knowns):
-                ax[0][idx].imshow(person.img[:, :, ::-1])
-                ax[0][idx].set_title(f'{person.label}')
-
-                ax[1][idx].imshow(person.img_profile[:, :, ::-1])
-                ax[1][idx].set_title(f'{round(distances[idx], 7)}')
+                ax[idx].imshow(person.img[:, :, ::-1])
+                ax[idx].set_title(f'{person.label}\n{round(distances[idx], 7)}')
             else:
-                ax[0][len(knowns)].imshow(unknown.img[:, :, ::-1])
-                ax[0][len(knowns)].set_title(f'"{label}"')
-
-                ax[1][len(knowns)].imshow(unknown.img[:, :, ::-1])
-                ax[1][len(knowns)].set_title(f'{who_near + 1} person\n{round(distances[who_near], 7)}')
+                ax[len(knowns)].imshow(unknown.img[:, :, ::-1])
+                ax[len(knowns)].set_title(f'"{label}"\n{who_near + 1} person\n{round(distances[who_near], 7)}')
 
             fig.show()
             fig.savefig(f'{self.img_save_dir / img_path.stem}_{idx}_{label}.jpg')
-        return label
+        return label, distances[who_near]
 
 
 recog_model = ONNXRecognator()
 
 
 class Person:
-    def __init__(self, path: [str, Path] = None, img=None, net=None, label='unknown', path_profile=None):
+    def __init__(self, path: [str, Path] = None, img=None,
+                 label='unknown', color=(0, 0, 255),
+                 net=recog_model, path_profile=None):
         self.path = str(path) if path else None
+        self.color = color
         if img is None:
             self.img = cv2.imread(self.path)
         else:

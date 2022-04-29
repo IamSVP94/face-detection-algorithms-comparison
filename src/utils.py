@@ -15,7 +15,41 @@ def read_markups(directory_with_markup, filename):
     return true_bboxes
 
 
-def draw_face(img, landmarks, threshold=None, show=False, color='green'):
+def draw_face(img, landmarks, colores, labels=None, scores=None, threshold=None, show=False):
+    dimg = img.copy()
+
+    text = f'found {len(landmarks)} faces'
+    if threshold:
+        text = f'{text} (threshold={threshold})'
+
+    cv2.putText(dimg, text, (25, 25), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1)
+    for face_idx, face in enumerate(landmarks.values()):
+        score, bbox, landmark = face.values()
+
+        xmin, ymin, xmax, ymax = bbox
+        cv2.rectangle(dimg, (int(xmin), int(ymin)), (int(xmax), int(ymax)), colores[face_idx], 1)
+
+        bbox_text = f'{round(score, 4)}'
+        if scores:
+            bbox_text = f'{bbox_text} dist={(int(scores[face_idx]))}'
+        if labels:
+            bbox_text = f'{bbox_text} "{labels[face_idx]}"'
+
+        cv2.putText(dimg, bbox_text, (int(xmin), int(ymin) - 7),
+                    cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.9, colores[face_idx], 1)
+        for point_name, point in landmark.items():
+            if point_name in ['right_eye', 'mouth_right']:
+                landmark_color = (0, 255, 255)
+            else:
+                landmark_color = (255, 0, 255)
+            cv2.circle(dimg, tuple(map(int, point)), 1, landmark_color, 1)
+    if show:
+        cv2.imshow('Image', dimg)
+        cv2.waitKey()
+    return dimg
+
+
+def draw_face_old(img, landmarks, labels=None, scores=None, threshold=None, show=False, color='green'):
     if color == 'blue':
         color = (255, 0, 0)
     elif color == 'red':
@@ -24,14 +58,24 @@ def draw_face(img, landmarks, threshold=None, show=False, color='green'):
         color = (0, 255, 0)
     dimg = img.copy()
 
-    cv2.putText(dimg, f'found {len(landmarks)} faces (threshold={threshold})',
-                (25, 25), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1)
-    for face_idx, face in landmarks.items():
+    text = f'found {len(landmarks)} faces'
+    if threshold:
+        text = f'{text} (threshold={threshold})'
+
+    cv2.putText(dimg, text, (25, 25), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1)
+    for face_idx, face in enumerate(landmarks.values()):
         score, bbox, landmark = face.values()
 
         xmin, ymin, xmax, ymax = bbox
         cv2.rectangle(dimg, (int(xmin), int(ymin)), (int(xmax), int(ymax)), color, 1)
-        cv2.putText(dimg, f'{round(score, 4)}', (int(xmin), int(ymin) - 7),
+
+        bbox_text = f'{round(score, 4)}'
+        if scores:
+            bbox_text = f'{bbox_text} dist={(int(scores[face_idx]))}'
+        if labels:
+            bbox_text = f'{bbox_text} "{labels[face_idx]}"'
+
+        cv2.putText(dimg, bbox_text, (int(xmin), int(ymin) - 7),
                     cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.9, color, 1)
         for point_name, point in landmark.items():
             if point_name in ['right_eye', 'mouth_right']:

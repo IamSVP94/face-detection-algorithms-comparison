@@ -2,7 +2,7 @@ import cv2
 from tqdm import tqdm
 from pathlib import Path
 
-from src.RetinaFace.utils import find_face
+from src.RetinaFace_h5.utils import find_face
 from src.utils import PARENT_DIR, draw_face, bbox2yolobbox, write_label
 
 new_img_dir_path = PARENT_DIR / 'temp' / 'RetinaFace29'
